@@ -46,7 +46,7 @@ The Plan:
 ## Getting Started
 
 To begin, assemble the rotary encoder and knob,
-[install CircuitPython 9.1](https://learn.adafruit.com/welcome-to-circuitpython/installing-circuitpython),
+[install CircuitPython 9.1](https://learn.adafruit.com/adafruit-qt-py-esp32-s3/circuitpython-2)
 then copy the project bundle code to your CIRCUITPY drive. Once that's all done,
 `code.py` will begin sending display frames over the serial console. To see the
 display frames, you will need to:
