@@ -26,6 +26,8 @@ The Plan:
 
 ## Hardware
 
+![QT Py ESP32-S3 dev board with rotary encoder](qtpyS3.jpeg)
+
 - Adafruit QT Py ESP32-S3 with 8MB Flash and no PSRAM
   ([product page](https://www.adafruit.com/product/5426),
   [learn guide](https://learn.adafruit.com/adafruit-qt-py-esp32-s3))
