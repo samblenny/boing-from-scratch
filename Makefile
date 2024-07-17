@@ -29,7 +29,7 @@ sync: bundle
 # serial device that happens to enumerate when I plug my Pi Pico into my mac.
 # It's very likely the device name may be different on other systems.
 tty:
-	screen -fn /dev/tty.usbmodem2201 256000
+	screen -fn /dev/tty.usbmodem* 256000
 
 clean:
 	rm -rf build
