@@ -19,6 +19,8 @@ const SER_BTN = document.querySelector('#serial');  // Start Serial button
 const CANVAS = document.querySelector('#canvas');   // Canvas
 
 const CTX = CANVAS.getContext("2d", {willReadFrequently: true});
+const CANVAS_W = 240;  // Canvas height at 1x zoom
+const CANVAS_H = 192;  // Canvas width at 1x zoom
 
 // Serial Port
 var SER_PORT = null;
@@ -55,9 +57,10 @@ async function disconnect(status) {
 
 // Update HTML canvas element with pixels for a new virtual display frame
 async function paintFrame(data) {
-    // Set size of virtual display (should be 96x96 or 240x240)
-    const w = Math.round(Math.sqrt(data.length));
-    const h = w;
+    // Set size of virtual display size
+    const zoom = 2;
+    const w = CANVAS_W;
+    const h = CANVAS_H;
     CANVAS.width = w;
     CANVAS.height = h;
     // getImageData returns RGBA Uint8ClampedArray of pixels in row-major order

@@ -32,8 +32,9 @@ def send(buf):
 def main():
     # Make a buffer to hold captured pixel data
     gcCol()
-    size = 240
-    buf = bytearray(size * size)
+    w = 312
+    h = 192
+    buf = bytearray(w * h)
     gcCol()
     # Send frames
     while True:
