@@ -11,6 +11,7 @@
 // - https://developer.mozilla.org/en-US/docs/Web/API/Streams_API/Concepts
 // - https://developer.mozilla.org/en-US/docs/Web/API/TextDecoderStream
 // - https://developer.mozilla.org/en-US/docs/Glossary/Base64
+// - https://en.wikipedia.org/wiki/Endianness
 //
 "use strict";
 
@@ -57,25 +58,32 @@ async function paintFrame(data, palette) {
     // getImageData returns RGBA Uint8ClampedArray of pixels in row-major order
     const imageData = CTX.getImageData(0, 0, w, h, {colorSpace: "srgb"});
     const rgba = imageData.data;
-    // Expand packed indexed color pixel data into RGBA (palette is RGB, no A)
-    for(let src=0, dst=0;
-        (src<data.length) && (dst+7<rgba.length);
-        src+=1, dst+=8)
-    {
-        let a = data[src] & 15;
-        let b = data[src] >> 4;
-        let c = palette[a];
-        let d = palette[b];
-
-        rgba[dst]   = a << 4; //(c >> 16) & 255;  // R
-        rgba[dst+1] = a << 4; //(c >>  8) & 255;  // G
-        rgba[dst+2] = a << 4; // c        & 255;  // B
-        rgba[dst+3] = 255;              // A
-
-        rgba[dst+4] = b << 4; //(d >> 16) & 255;  // R
-        rgba[dst+5] = b << 4; //(d >>  8) & 255;  // G
-        rgba[dst+6] = b << 4; // c        & 255;  // B
-        rgba[dst+7] = 255;              // A
+    // Expand packed indexed color pixel data into RGBA (palette is RGB, no A).
+    // CAUTION: This is tricky! Color indexes are packed 2 nibbles per byte in
+    // groups of 4 bytes (8 pixels per uint32). To unpack pixels in the right
+    // order, this must account for endianness of nibbles within a byte and of
+    // bytes within a uint32. It's rather confusing. For the destination array,
+    // each pixel uses 4 bytes (RGBA). So, each group of 4 source array bytes
+    // expands into 4*2*4=32 destination array bytes.
+    const srcLen = data.length;
+    const dstLen = rgba.length;
+    for(let s=0, d=0; (s+3<srcLen) && (d+31<dstLen); s+=4, d+=32) {
+        // Gather 4 source bytes into a little-endian uint32
+        let n = data[s] | (data[s+1]<<8) | (data[s+2]<<16) | (data[s+3]<<24);
+        // Unpack 4-bit source nibbles into RGBA pixeles in destination buffer,
+        // taking nibbles from the big end of the unint32 (pixel at (x=0,y=0)
+        // is surprisingly stored in the high nibble of the 4th byte of the
+        // source buffer; low nibble of first byte has the pixel at (x=7,y=0))
+        for(let i=0; i<8; i++) {
+            const colorIndex = (n >> 28) & 0xf;
+            const rgb = palette[colorIndex];
+            n <<= 4;
+            const px = d + (i * 4);
+            rgba[px]   = colorIndex << 4; //(c >> 16) & 255;  // R
+            rgba[px+1] = colorIndex << 4; //(c >>  8) & 255;  // G
+            rgba[px+2] = colorIndex << 4; // c        & 255;  // B
+            rgba[px+3] = 255;              // A
+        }
     }
     CTX.putImageData(imageData, 0, 0);
 }
