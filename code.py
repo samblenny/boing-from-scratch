@@ -3,17 +3,6 @@
 #
 # boing-from-scratch: Making a Boing Ball from scratch
 #
-# Palette Colors:
-# - gray 1:   #AAAAAA
-# - purple 1: #AA00AA
-# - gray 2:   #666666
-# - purple 2: #660A66
-# - red:      #FF0000
-#
-# Ball (hemisphere) specs:
-# - 8 longitude divisions at π/8 = 0.39270 radians each
-# - 8 latitude divisions at π/8 = 0.39270 radians each
-#
 # Docs:
 # - https://learn.adafruit.com/adafruit-i2c-qt-rotary-encoder/python-circuitpython
 # - https://docs.circuitpython.org/projects/seesaw/en/latest/api.html
@@ -59,14 +48,16 @@ def send(buf, tag):
 
 def sendPalette(pal, angle):
     # Send color palette with red and white rotated by angle
-    assert ((0 <= angle) and (angle <= 15)), 'angle out of range'
+    assert ((0 <= angle) and (angle <= 7)), 'angle out of range'
     n = len(pal)
-    start = angle
+    assert n == 16, 'unexpected palette size'
+    start = 4 + angle
+    end = 12
     data = bytearray(n * 3)
     # Make a list of the new order of colors after rotating red and white
-#     order = [0, 1, 2, 3] + list(range(start, n)) + list(range(4, start))
-    order = list(range(start, n)) + list(range(start))
-    # Make a buffer of colors in the rotated order (use MSB byte order)
+    order = ([0, 1, 2, 3]
+        + list(range(start, end)) + list(range(4, start)) + [12, 13, 14, 15])
+    # Make a buffer of colors in the rotated order (use big-endian byte order)
     for i in range(n):
         c = pal[order[i]]
         m = i * 3
@@ -78,36 +69,36 @@ def sendPalette(pal, angle):
 def initPalette():
     # Return the initial color palette
     p = Palette(16)
-#     p[ 0] = 0xaaaaaa  # gray
-#     p[ 1] = 0x666666  # dark gray
-#     p[ 2] = 0xaa00aa  # purple
-#     p[ 3] = 0x660066  # dark purple
-    p[ 0] = 0xffffff
-    p[ 1] = 0xf7f7f7
-    p[ 2] = 0xefefef
-    p[ 3] = 0xe7e7e7
-    p[ 4] = 0xdfdfdf  # white
-    p[ 5] = 0xd7d7d7
-    p[ 6] = 0xcfcfcf
-    p[ 7] = 0xc7c7c7
+    p[ 0] = 0xaaaaaa  # gray
+    p[ 1] = 0x666666  # dark gray
+    p[ 2] = 0xaa00aa  # purple
+    p[ 3] = 0x660066  # dark purple
+    p[ 4] = 0xffffff  # white
+    p[ 5] = 0xf7f7f7
+    p[ 6] = 0xefefef
+    p[ 7] = 0xe7e7e7
     p[ 8] = 0xff0000  # red
     p[ 9] = 0xf70000
     p[10] = 0xef0000
     p[11] = 0xe70000
-    p[12] = 0xdf0000
-    p[13] = 0xd70000
-    p[14] = 0xcf0000
-    p[15] = 0xc70000
+    p[12] = 0xff00ff  # magenta
+    p[13] = 0xff00ff
+    p[14] = 0xff00ff
+    p[15] = 0xff00ff
     return p
 
 def paint(bitmap, w, h):
     # Paint frame with a color cycleable red and white checkerboard pattern
     for y in range(h):
         for x in range(w):
-#             angle = (x >> 1) & 3
-#             grid = ((y >> 4) & 1) ^ ((x >> 4) & 1)   # checkerboard pattern
-#             bitmap[x,y] = (grid * 8) + angle
-            bitmap[x,y] = (((y * w) + x) >> 1) & 15
+            angle = (x >> 2) & 3
+            grid = ((y >> 4) & 1) ^ ((x >> 4) & 1)   # checkerboard pattern
+            if x >= 48 and x < 96 and y >= 32 and y < 80:
+                bitmap[x,y] = 4 + (grid * 4) + angle
+            elif x & 15 == 0 or y & 15 == 0:
+                bitmap[x,y] = 1
+            else:
+                bitmap[x,y] = 0
 
 def main():
     # Make frame buffer (160x128px size matches Adafruit PyGamer)
@@ -145,17 +136,18 @@ def main():
     # MAIN EVENT LOOP
     prevClick = False
     while True:
-        sleep(0.01)
+        sleep(0.005)
         (c, d) = (click(), delta())  # read encoder (Seesaw I2C)
         if c and (c != prevClick):
             # send entire frame for click
             send(buf, 'FRAME')
+            sendPalette(pal, angle)
             col()
         prevClick = c
         if d != 0:
-            angle = (32 + angle + d) & 15   # update angle, modulo 16
+            angle = (32 + angle + d) & 7   # update angle, modulo 8
             sendPalette(pal, angle)
-#             send(buf, 'FRAME')
+            # send(buf, 'FRAME')     # doing this here adds noticeable lag
             col()
 
 main()
