@@ -58,13 +58,14 @@ def send(buf, tag):
     wr('-----END %s-----\n' % tag)
 
 def sendPalette(pal, angle):
-    # Send color palette with red and white rotated by angle (range 0..7)
-    assert ((0 <= angle) and (angle <= 7)), 'angle out of range (0..7)'
+    # Send color palette with red and white rotated by angle
+    assert ((0 <= angle) and (angle <= 15)), 'angle out of range'
     n = len(pal)
-    start = 4 + angle
+    start = angle
     data = bytearray(n * 3)
     # Make a list of the new order of colors after rotating red and white
-    order = [0, 1, 2, 3] + list(range(start, n)) + list(range(4, start))
+#     order = [0, 1, 2, 3] + list(range(start, n)) + list(range(4, start))
+    order = list(range(start, n)) + list(range(start))
     # Make a buffer of colors in the rotated order (use MSB byte order)
     for i in range(n):
         c = pal[order[i]]
@@ -82,34 +83,31 @@ def initPalette():
 #     p[ 2] = 0xaa00aa  # purple
 #     p[ 3] = 0x660066  # dark purple
     p[ 0] = 0xffffff
-    p[ 1] = 0xffffff
-    p[ 2] = 0xffffff
-    p[ 3] = 0xffffff
-    p[ 4] = 0xffffff  # white
-    p[ 5] = 0xffffff
-    p[ 6] = 0xffffff
-    p[ 7] = 0xffffff
+    p[ 1] = 0xf7f7f7
+    p[ 2] = 0xefefef
+    p[ 3] = 0xe7e7e7
+    p[ 4] = 0xdfdfdf  # white
+    p[ 5] = 0xd7d7d7
+    p[ 6] = 0xcfcfcf
+    p[ 7] = 0xc7c7c7
     p[ 8] = 0xff0000  # red
-    p[ 9] = 0xff0000
-    p[10] = 0xff0000
-    p[11] = 0xff0000
-    p[12] = 0xff0000
-    p[13] = 0xff0000
-    p[14] = 0xff0000
-    p[15] = 0xff0000
+    p[ 9] = 0xf70000
+    p[10] = 0xef0000
+    p[11] = 0xe70000
+    p[12] = 0xdf0000
+    p[13] = 0xd70000
+    p[14] = 0xcf0000
+    p[15] = 0xc70000
     return p
 
 def paint(bitmap, w, h):
     # Paint frame with a color cycleable red and white checkerboard pattern
     for y in range(h):
         for x in range(w):
-#             angle = (x >> 2) & 3
+#             angle = (x >> 1) & 3
 #             grid = ((y >> 4) & 1) ^ ((x >> 4) & 1)   # checkerboard pattern
-#             bitmap[base+x] = (4 + grid) + angle
-#             angle = (x >> 2) & 3
-            bitmap[x,y] = 0 if (x == y) else 8
-#             grid = ((y >> 4) & 1) ^ ((x >> 4) & 1)   # checkerboard pattern
-#             bitmap[x,y] = (grid * 8) + ((x>>2) & 3)
+#             bitmap[x,y] = (grid * 8) + angle
+            bitmap[x,y] = (((y * w) + x) >> 1) & 15
 
 def main():
     # Make frame buffer (160x128px size matches Adafruit PyGamer)
@@ -147,7 +145,7 @@ def main():
     # MAIN EVENT LOOP
     prevClick = False
     while True:
-        sleep(0.02)
+        sleep(0.01)
         (c, d) = (click(), delta())  # read encoder (Seesaw I2C)
         if c and (c != prevClick):
             # send entire frame for click
@@ -155,9 +153,9 @@ def main():
             col()
         prevClick = c
         if d != 0:
-            angle = (16 + angle + d) & 7   # update angle, modulo 8
+            angle = (32 + angle + d) & 15   # update angle, modulo 16
             sendPalette(pal, angle)
-            send(buf, 'FRAME')
+#             send(buf, 'FRAME')
             col()
 
 main()

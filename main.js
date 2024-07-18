@@ -79,10 +79,10 @@ async function paintFrame(data, palette) {
             const rgb = palette[colorIndex];
             n <<= 4;
             const px = d + (i * 4);
-            rgba[px]   = colorIndex << 4; //(c >> 16) & 255;  // R
-            rgba[px+1] = colorIndex << 4; //(c >>  8) & 255;  // G
-            rgba[px+2] = colorIndex << 4; // c        & 255;  // B
-            rgba[px+3] = 255;              // A
+            rgba[px]   = (rgb >> 16) & 255;  // R
+            rgba[px+1] = (rgb >>  8) & 255;  // G
+            rgba[px+2] =  rgb        & 255;  // B
+            rgba[px+3] = 255;                // A
         }
     }
     CTX.putImageData(imageData, 0, 0);
@@ -162,6 +162,8 @@ async function parseLine(line, state) {
                 updatePalette(data, state);
                 if (state.pxBuf) {
                     paintFrame(state.pxBuf, state.palette);
+                } else {
+                    console.log("I don't have any pixels");
                 }
             } catch (e) {
                 console.log("bad palette", e);
