@@ -23,7 +23,9 @@
 # - https://numpy.org/doc/stable/reference/generated/numpy.zeros.html
 #
 from binascii import b2a_base64
+from bitmaptools import draw_polygon
 from board import STEMMA_I2C
+from displayio import Bitmap, Palette
 from gc import collect, mem_free
 from sys import stdout
 from time import sleep
@@ -45,7 +47,7 @@ def send(buf, tag):
     # using sys.stdout.write() here is *way* faster than using print().
     wr = stdout.write
     b64 = b2a_base64
-    wr('-----BEGIN %s-----\n' % tag)
+    wr('\n-----BEGIN %s-----\n' % tag)
     stride = 60
     last = 0
     for i in range(0, len(buf), stride):
@@ -55,37 +57,70 @@ def send(buf, tag):
         wr(b64(buf[i+stride:]))
     wr('-----END %s-----\n' % tag)
 
+def sendPalette(pal, angle):
+    # Send color palette with red and white rotated by angle (range 0..7)
+    assert ((0 <= angle) and (angle <= 7)), 'angle out of range (0..7)'
+    n = len(pal)
+    start = 4 + angle
+    data = bytearray(n * 3)
+    # Make a list of the new order of colors after rotating red and white
+    order = [0, 1, 2, 3] + list(range(start, n)) + list(range(4, start))
+    # Make a buffer of colors in the rotated order (use MSB byte order)
+    for i in range(n):
+        c = pal[order[i]]
+        m = i * 3
+        data[m]   = (c >> 16) & 255
+        data[m+1] = (c >>  8) & 255
+        data[m+2] =  c        & 255
+    send(data, 'PALETTE')
+
 def initPalette():
-    # Return the initial color palette with 32 RGBA (32-bits each) colors
-    return np.array([
-        0xaa, 0xaa, 0xaa, 0xff,  # gray
-        0xaa, 0x00, 0xaa, 0xff,  # purple
-        0x66, 0x66, 0x66, 0xff,  # dark gray
-        0x66, 0x00, 0x66, 0xff,  # dark purple
-        0xff, 0xff, 0xff, 0xff,  # white
-        0xff, 0x00, 0x00, 0xff,  # red
-    ], dtype=np.uint8)
+    # Return the initial color palette
+    p = Palette(16)
+#     p[ 0] = 0xaaaaaa  # gray
+#     p[ 1] = 0x666666  # dark gray
+#     p[ 2] = 0xaa00aa  # purple
+#     p[ 3] = 0x660066  # dark purple
+    p[ 0] = 0xffffff
+    p[ 1] = 0xffffff
+    p[ 2] = 0xffffff
+    p[ 3] = 0xffffff
+    p[ 4] = 0xffffff  # white
+    p[ 5] = 0xffffff
+    p[ 6] = 0xffffff
+    p[ 7] = 0xffffff
+    p[ 8] = 0xff0000  # red
+    p[ 9] = 0xff0000
+    p[10] = 0xff0000
+    p[11] = 0xff0000
+    p[12] = 0xff0000
+    p[13] = 0xff0000
+    p[14] = 0xff0000
+    p[15] = 0xff0000
+    return p
 
-def colorCycle(pal, delta):
-    # Rotate the color palette (CAUTION: delta can be negative)
-    return np.roll(pal, 4 * ((32 + delta) & 31))
-
-def paint(buf, w, h):
-    # Paint a frame. (w: buf width, h: buf height)
+def paint(bitmap, w, h):
+    # Paint frame with a color cycleable red and white checkerboard pattern
     for y in range(h):
-        base = y * w
         for x in range(w):
-            buf[base+x] = x & 31
+#             angle = (x >> 2) & 3
+#             grid = ((y >> 4) & 1) ^ ((x >> 4) & 1)   # checkerboard pattern
+#             bitmap[base+x] = (4 + grid) + angle
+#             angle = (x >> 2) & 3
+            bitmap[x,y] = 0 if (x == y) else 8
+#             grid = ((y >> 4) & 1) ^ ((x >> 4) & 1)   # checkerboard pattern
+#             bitmap[x,y] = (grid * 8) + ((x>>2) & 3)
 
 def main():
-    # Make a buffer to hold captured pixel data
+    # Make frame buffer (160x128px size matches Adafruit PyGamer)
     gcCol()
-    w = 312
-    h = 192
-    buf = bytearray(w * h)  # pixel buffer (indext, 8-bits per px)
-    paint(buf, w, h)        # draw a pattern
+    w = 160
+    h = 128
+    bitmap = Bitmap(w, h, 11)    # 11 = number of possible values
+    pal = initPalette()          # color palette (RGBA 32 bits each)
     gcCol()
-    pal = initPalette()     # color palette (RGBA 32 bits each)
+    buf = np.frombuffer(bitmap, dtype=np.uint8)
+    paint(bitmap, w, h)          # draw a pattern
     gcCol()
     # Set up rotary encoder
     ssw = Seesaw(STEMMA_I2C(), addr=0x36)  # address for no jumpers soldered
@@ -104,7 +139,10 @@ def main():
     pr = stdout.write
     col = gcCol
     # SEND COLOR PALETTE AND FIRST FRAME
-    send(pal, 'PALETTE')
+    print('display size', w, h)
+    print('bits per pixel', bitmap.bits_per_value)
+    angle = 0
+    sendPalette(pal, angle)
     send(buf, 'FRAME')
     # MAIN EVENT LOOP
     prevClick = False
@@ -117,8 +155,9 @@ def main():
             col()
         prevClick = c
         if d != 0:
-            pal = colorCycle(pal, d)
-            send(pal, 'PALETTE')
+            angle = (16 + angle + d) & 7   # update angle, modulo 8
+            sendPalette(pal, angle)
+            send(buf, 'FRAME')
             col()
 
 main()

@@ -18,9 +18,11 @@ const STATUS = document.querySelector('#status');   // Status span
 const SER_BTN = document.querySelector('#serial');  // Start Serial button
 const CANVAS = document.querySelector('#canvas');   // Canvas
 
-const CTX = CANVAS.getContext("2d", {willReadFrequently: true});
-const CANVAS_W = 240;  // Canvas height at 1x zoom
-const CANVAS_H = 192;  // Canvas width at 1x zoom
+const CTX = CANVAS.getContext("2d", { willReadFrequently: true });
+CTX.imageSmoothingEnabled = false;
+
+const CANVAS_W = 160;  // Canvas height at 1x zoom
+const CANVAS_H = 128;  // Canvas width at 1x zoom
 
 // Serial Port
 var SER_PORT = null;
@@ -28,20 +30,6 @@ var SER_PORT = null;
 // Update status line span
 function setStatus(s) {
     STATUS.textContent = s;
-}
-
-// Exapand pixel values from the luma array into the RGBA array as grayscale
-function expandIntoRGBA(luma, rgba) {
-    // luma is Uint8ClampedArray using 1 byte per pixel
-    // rgba is Uing8ClampedArray using 4 bytes per pixel
-    let i = 0;
-    for (const Y of luma) {
-        rgba[i] = Y;
-        rgba[i+1] = Y;
-        rgba[i+2] = Y;
-        rgba[i+3] = 255;
-        i += 4;
-    }
 }
 
 // Disconnect serial port and stop updating the canvas
@@ -56,28 +44,82 @@ async function disconnect(status) {
 }
 
 // Update HTML canvas element with pixels for a new virtual display frame
-async function paintFrame(data) {
+async function paintFrame(data, palette) {
     // Set size of virtual display size
     const zoom = 2;
+    const bits_per_px = 4;
+    const mask = 15;
+    const max_value = palette.length - 1;
     const w = CANVAS_W;
     const h = CANVAS_H;
     CANVAS.width = w;
     CANVAS.height = h;
     // getImageData returns RGBA Uint8ClampedArray of pixels in row-major order
-    const imageData = CTX.getImageData(0, 0, w, h);
+    const imageData = CTX.getImageData(0, 0, w, h, {colorSpace: "srgb"});
     const rgba = imageData.data;
-    const luma = Uint8ClampedArray.from(data);
-    expandIntoRGBA(luma, rgba);
+    // Expand packed indexed color pixel data into RGBA (palette is RGB, no A)
+    for(let src=0, dst=0;
+        (src<data.length) && (dst+7<rgba.length);
+        src+=1, dst+=8)
+    {
+        let a = data[src] & 15;
+        let b = data[src] >> 4;
+        let c = palette[a];
+        let d = palette[b];
+
+        rgba[dst]   = a << 4; //(c >> 16) & 255;  // R
+        rgba[dst+1] = a << 4; //(c >>  8) & 255;  // G
+        rgba[dst+2] = a << 4; // c        & 255;  // B
+        rgba[dst+3] = 255;              // A
+
+        rgba[dst+4] = b << 4; //(d >> 16) & 255;  // R
+        rgba[dst+5] = b << 4; //(d >>  8) & 255;  // G
+        rgba[dst+6] = b << 4; // c        & 255;  // B
+        rgba[dst+7] = 255;              // A
+    }
     CTX.putImageData(imageData, 0, 0);
+}
+
+// Return RRGGBB (no AA!) CSS hex string for a unit32 RGBA color value
+// This provides zero fill and avoids the signed prefix quirk of toString(16)
+function hexColor(c) {
+    let a = [
+        ((c >> 20) & 0xf).toString(16) || '0',
+        ((c >> 16) & 0xf).toString(16) || '0',
+        ((c >> 12) & 0xf).toString(16) || '0',
+        ((c >>  8) & 0xf).toString(16) || '0',
+        ((c >>  4) & 0xf).toString(16) || '0',
+        ( c        & 0xf).toString(16) || '0',
+    ];
+    return a.join('');
+}
+
+// Update the color palette
+async function updatePalette(data, state) {
+    const colors = Math.floor(data.length / 3);
+    state.palette = [];
+    for(let i=0; i<colors; i++) {
+        const n = i * 3;
+        const rgb = (data[n]<<16) | (data[n+1]<<8) | data[n+2];
+        state.palette[i] = rgb;
+    }
+    let s = [];
+    for(let c of state.palette) {
+        s.push(hexColor(c));
+    }
+    console.log('palette', s.join(' '));
 }
 
 // Parse complete lines to assemble frames
 async function parseLine(line, state) {
-    if(!state.frameSync) {
+    if(!(state.frameSync || state.paletteSync)) {
         // Ignore lines until the first start of frame marker
         // Wait to sync with start of frame
         if (line == '-----BEGIN FRAME-----') {
             state.frameSync = true;
+            state.data = [];
+        } else if (line == '-----BEGIN PALETTE-----') {
+            state.paletteSync = true;
             state.data = [];
         } else if (line.startsWith('mem_free ')) {
             // Only log mem_free lines when the number has changed
@@ -87,8 +129,9 @@ async function parseLine(line, state) {
             }
         }
     } else {
-        // When frame sync is locked, save base64 data until end of frame mark
-        if (line == '-----END FRAME-----') {
+        // When frame or palette sync is locked, save base64 data until end of
+        // frame mark
+        if (state.frameSync && line == '-----END FRAME-----') {
             state.frameSync = false;
             try {
                 // Decode the base64 using the Data URL decoder because the
@@ -96,9 +139,24 @@ async function parseLine(line, state) {
                 const dataUrlPrefix = 'data:application/octet-stream;base64,';
                 const buf = await fetch(dataUrlPrefix + state.data.join(''));
                 const data = new Uint8Array(await buf.arrayBuffer());
-                paintFrame(data);
+                state.pxBuf = data;
+                paintFrame(data, state.palette);
             } catch (e) {
                 console.log("bad frame", e);
+            }
+        } else if (state.paletteSync && line == '-----END PALETTE-----') {
+            state.paletteSync = false;
+            try {
+                // Decode the base64 using the Data URL decoder
+                const dataUrlPrefix = 'data:application/octet-stream;base64,';
+                const buf = await fetch(dataUrlPrefix + state.data.join(''));
+                const data = new Uint8Array(await buf.arrayBuffer());
+                updatePalette(data, state);
+                if (state.pxBuf) {
+                    paintFrame(state.pxBuf, state.palette);
+                }
+            } catch (e) {
+                console.log("bad palette", e);
             }
         } else {
             // This is a base64 data chunk
@@ -140,8 +198,11 @@ async function readFrames(port) {
     const state = {
         lineSync: false,
         frameSync: false,
+        paletteSync: false,
         lineBuf: '',
         data: [],
+        pxBuf: null,
+        palette: [0,0,0,0,0,0,0,0,0,0,0,0],
         memFree: '',
     };
     while(port.readable) {
