@@ -115,7 +115,6 @@ async function updatePalette(data, state) {
     for(let c of state.palette) {
         s.push(hexColor(c));
     }
-    console.log('palette', s.join(' '));
 }
 
 // Parse complete lines to assemble frames

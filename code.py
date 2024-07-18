@@ -12,7 +12,6 @@
 # - https://numpy.org/doc/stable/reference/generated/numpy.zeros.html
 #
 from binascii import b2a_base64
-from bitmaptools import draw_polygon
 from board import STEMMA_I2C
 from displayio import Bitmap, Palette
 from gc import collect, mem_free
@@ -131,23 +130,23 @@ def main():
     print('display size', w, h)
     print('bits per pixel', bitmap.bits_per_value)
     angle = 0
-    sendPalette(pal, angle)
     send(buf, 'FRAME')
+    sendPalette(pal, angle)
     # MAIN EVENT LOOP
     prevClick = False
     while True:
         sleep(0.005)
         (c, d) = (click(), delta())  # read encoder (Seesaw I2C)
         if c and (c != prevClick):
-            # send entire frame for click
+            # send entire frame and palette for knob click
             send(buf, 'FRAME')
             sendPalette(pal, angle)
             col()
         prevClick = c
         if d != 0:
-            angle = (32 + angle + d) & 7   # update angle, modulo 8
+            # for knob turn, only send palette
+            angle = (32 + angle + d) & 7        # update angle, modulo 8
             sendPalette(pal, angle)
-            # send(buf, 'FRAME')     # doing this here adds noticeable lag
             col()
 
 main()
