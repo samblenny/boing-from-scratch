@@ -18,6 +18,7 @@ from gc import collect, mem_free
 from sys import stdout
 from time import sleep
 from ulab import numpy as np
+import usb_cdc
 
 from adafruit_seesaw import digitalio
 from adafruit_seesaw.seesaw import Seesaw
@@ -99,9 +100,20 @@ def paint(bitmap, w, h):
             else:
                 bitmap[x,y] = 0
 
+def drainCDCBuf():
+    # Drain the serial console buffer.
+    cons = usb_cdc.console
+    if cons:
+        w = cons.in_waiting
+        if w > 0:
+            cons.timeout = 0
+            cons.read(w)
+
 def main():
-    # Make frame buffer (160x128px size matches Adafruit PyGamer)
+    # Initialize stuff then start event loop
+    drainCDCBuf()   # usb_cdc.console may have leftover garbage
     gcCol()
+    # Make frame buffer (160x128px size matches Adafruit PyGamer)
     w = 160
     h = 128
     bitmap = Bitmap(w, h, 11)    # 11 = number of possible values
@@ -130,23 +142,37 @@ def main():
     print('display size', w, h)
     print('bits per pixel', bitmap.bits_per_value)
     angle = 0
-    send(buf, 'FRAME')
-    sendPalette(pal, angle)
     # MAIN EVENT LOOP
     prevClick = False
+    fullFrameDirty = False
+    paletteDirty = False
     while True:
         sleep(0.005)
-        (c, d) = (click(), delta())  # read encoder (Seesaw I2C)
+        # Check for newline wake sequence on the serial console
+        cons = usb_cdc.console
+        if cons and cons.in_waiting > 0:
+            # for any console input (probably LF) -> send full frame
+            drainCDCBuf()
+            fullFrameDirty = True
+        # Read the rotary encoder (Seesaw I2C)
+        (c, d) = (click(), delta())
         if c and (c != prevClick):
-            # send entire frame and palette for knob click
-            send(buf, 'FRAME')
-            sendPalette(pal, angle)
-            col()
+            # knob was clicked -> send full frame
+            fullFrameDirty = True
         prevClick = c
         if d != 0:
-            # for knob turn, only send palette
-            angle = (32 + angle + d) & 7        # update angle, modulo 8
+            # knob was turned -> send palette
+            angle = (32 + angle + d) & 7       # update angle, modulo 8
+            paletteDirty = True
+        if fullFrameDirty:
+            send(buf, 'FRAME')
             sendPalette(pal, angle)
+            fullFrameDirty = False
+            paletteDirty = False
+            col()
+        if paletteDirty:
+            sendPalette(pal, angle)
+            paletteDirty = False
             col()
 
 main()

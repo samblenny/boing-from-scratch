@@ -134,6 +134,8 @@ async function parseLine(line, state) {
                 state.memFree = line;
                 console.log(line);
             }
+        } else if (line != '') {
+            console.log(line);
         }
     } else {
         // When frame or palette sync is locked, save base64 data until end of
@@ -201,6 +203,11 @@ async function parseChunk(chunk, state) {
 
 // Decode base64 encoded frame buffer updates from the serial port
 async function readFrames(port) {
+    // Send newline wakeup sequence so the board knows to send a full frame
+    const wr = port.writable.getWriter();
+    await wr.write(new Uint8Array('\n'.charCodeAt(0)));
+    wr.releaseLock();
+    // Now start reading
     const reader = port.readable
         .pipeThrough(new TextDecoderStream())
         .getReader();
@@ -246,7 +253,9 @@ function connect() {
     .then(async (response) => {
         SER_PORT = await response;
         SER_PORT.ondisconnect = async (event) => {
-            await event.target.close();
+            try {
+                await event.target.close();
+            } catch(e) { /* whatever... I tried. */ }
             disconnect('serial device unplugged');
         };
         await SER_PORT.open({baudRate: 115200});
